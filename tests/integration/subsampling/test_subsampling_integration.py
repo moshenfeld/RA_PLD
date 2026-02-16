@@ -1,0 +1,163 @@
+"""
+Integration tests for subsampling behavior.
+"""
+import math
+import numpy as np
+import pytest
+
+from PLD_accounting.discrete_dist import DiscreteDist
+from PLD_accounting.subsample_PLD import (
+    subsample_PMF,
+)
+from PLD_accounting.types import (
+    AllocationSchemeConfig,
+    BoundType,
+    ConvolutionMethod,
+    Direction,
+    PrivacyParams,
+)
+from PLD_accounting.random_allocation_accounting import _allocation_PMF, _compute_conv_params
+
+
+def _upper_to_lower(dist: DiscreteDist) -> DiscreteDist:
+    if dist.p_neg_inf > 0:
+        raise ValueError("Expected p_neg_inf=0 for upper PLD")
+    losses = dist.x_array
+    probs = dist.PMF_array
+    lower_probs = np.zeros_like(probs)
+    mask = probs > 0
+    lower_probs[mask] = np.exp(np.log(probs[mask]) - losses[mask])
+    sum_prob = np.sum(lower_probs)
+    return DiscreteDist(
+        x_array=losses,
+        PMF_array=lower_probs,
+        p_neg_inf=max(0.0, 1.0 - sum_prob),
+        p_pos_inf=0.0,
+    )
+
+
+def _negate_distribution(dist: DiscreteDist) -> DiscreteDist:
+    return DiscreteDist(
+        x_array=-np.flip(dist.x_array),
+        PMF_array=np.flip(dist.PMF_array),
+        p_neg_inf=dist.p_pos_inf,
+        p_pos_inf=dist.p_neg_inf,
+    )
+
+
+def _total_mass(pmf) -> float:
+    dense = pmf.to_dense_pmf()
+    finite = math.fsum(dense._probs)
+    return finite + dense._infinity_mass
+
+
+
+class TestPLDDualRealisticScenarios:
+    """Tests for PLD-dual on realistic random allocation scenarios."""
+
+    def test_realistic_allocation_remove(self):
+        params = PrivacyParams(
+            sigma=1.0,
+            num_steps=10,
+            num_selected=5,
+            delta=1e-6
+        )
+
+        config = AllocationSchemeConfig(
+            loss_discretization=1e-3,
+            tail_truncation=1e-8,
+            max_grid_mult=10_000,
+            max_grid_FFT=1_000_000,
+            convolution_method=ConvolutionMethod.GEOM
+        )
+
+        conv_params = _compute_conv_params(params=params, config=config)
+        remove_upper = _allocation_PMF(
+            conv_params=conv_params,
+            direction=Direction.REMOVE,
+            bound_type=BoundType.DOMINATES,
+            convolution_method=config.convolution_method
+        )
+
+        subsampled = subsample_PMF(
+            base_pld=remove_upper,
+            sampling_prob=0.01,
+            direction=Direction.REMOVE,
+            bound_type=BoundType.DOMINATES,
+        )
+
+        total_mass = np.sum(subsampled.PMF_array) + subsampled.p_neg_inf + subsampled.p_pos_inf
+        assert abs(total_mass - 1.0) < 1e-5
+        assert np.sum(subsampled.PMF_array > 1e-10) > 5
+
+    def test_realistic_allocation_add(self):
+        params = PrivacyParams(
+            sigma=1.0,
+            num_steps=10,
+            num_selected=5,
+            delta=1e-6
+        )
+
+        config = AllocationSchemeConfig(
+            loss_discretization=1e-3,
+            tail_truncation=1e-8,
+            max_grid_mult=10_000,
+            max_grid_FFT=1_000_000,
+            convolution_method=ConvolutionMethod.GEOM
+        )
+
+        conv_params = _compute_conv_params(params=params, config=config)
+        add_upper = _allocation_PMF(
+            conv_params=conv_params,
+            direction=Direction.ADD,
+            bound_type=BoundType.DOMINATES,
+            convolution_method=config.convolution_method
+        )
+
+        subsampled = subsample_PMF(
+            base_pld=add_upper,
+            sampling_prob=0.01,
+            direction=Direction.ADD,
+            bound_type=BoundType.DOMINATES,
+        )
+
+        total_mass = np.sum(subsampled.PMF_array) + subsampled.p_neg_inf + subsampled.p_pos_inf
+        assert abs(total_mass - 1.0) < 1e-5
+        assert np.sum(subsampled.PMF_array > 1e-10) > 5
+
+    @pytest.mark.parametrize("sampling_prob", [0.001, 0.01, 0.1])
+    def test_realistic_allocation_various_sampling_probs(self, sampling_prob):
+        params = PrivacyParams(
+            sigma=1.0,
+            num_steps=10,
+            num_selected=3,
+            delta=1e-6
+        )
+
+        config = AllocationSchemeConfig(
+            loss_discretization=1e-3,
+            tail_truncation=1e-8,
+            max_grid_mult=10_000,
+            max_grid_FFT=1_000_000,
+            convolution_method=ConvolutionMethod.GEOM
+        )
+
+        conv_params = _compute_conv_params(params=params, config=config)
+
+        for direction in [Direction.REMOVE, Direction.ADD]:
+            upper = _allocation_PMF(
+                conv_params=conv_params,
+                direction=direction,
+                bound_type=BoundType.DOMINATES,
+                convolution_method=config.convolution_method
+            )
+
+            subsampled = subsample_PMF(
+                base_pld=upper,
+                sampling_prob=sampling_prob,
+                direction=direction,
+                bound_type=BoundType.DOMINATES,
+            )
+
+            total_mass = np.sum(subsampled.PMF_array) + subsampled.p_neg_inf + subsampled.p_pos_inf
+            assert abs(total_mass - 1.0) < 1e-5
