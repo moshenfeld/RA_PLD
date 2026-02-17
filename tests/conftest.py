@@ -10,12 +10,13 @@ import numpy as np
 from PLD_accounting.types import PrivacyParams, AllocationSchemeConfig
 from PLD_accounting.discrete_dist import DiscreteDist
 
-# Third-party dependencies (random_allocation → numba) expect a writable cache directory.
+# Numba expects a writable cache directory in some environments.
 # Point numba to a workspace-local cache to avoid filesystem permission errors during tests.
 _DEFAULT_CACHE_DIR = Path(__file__).resolve().parents[1] / ".numba_cache"
-os.environ.setdefault("NUMBA_CACHE_DIR", str(_DEFAULT_CACHE_DIR))
 _DEFAULT_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-os.environ.setdefault("NUMBA_DISABLE_FILE_SYSTEM_CACHE", "1")
+# Force cache settings for deterministic behavior across environments.
+os.environ["NUMBA_CACHE_DIR"] = str(_DEFAULT_CACHE_DIR)
+os.environ["NUMBA_DISABLE_FILE_SYSTEM_CACHE"] = "1"
 
 
 def pytest_configure(config):

@@ -1,5 +1,4 @@
 from scipy import stats
-from scipy.stats import lognorm, norm
 import numpy as np
 
 from dp_accounting.pld import privacy_loss_distribution

@@ -1,0 +1,2 @@
+# Thin wrapper: install this local package and use runtime dependencies from pyproject.toml.
+.

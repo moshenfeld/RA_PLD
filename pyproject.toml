@@ -1,0 +1,53 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ra-pld"
+version = "0.1.0"
+description = "Numerical privacy accounting for random allocation and subsampling using PLDs."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [
+  { name = "Moshe Shenfeld" }
+]
+keywords = [
+  "differential privacy",
+  "privacy accounting",
+  "privacy loss distribution",
+  "pld",
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Science/Research",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Security",
+  "Topic :: Scientific/Engineering :: Mathematics",
+]
+dependencies = [
+  "numpy>=1.23",
+  "scipy>=1.10",
+  "numba>=0.58",
+  "dp-accounting>=0.4.3",
+]
+
+[project.optional-dependencies]
+test = [
+  "pytest>=8.0",
+  "pytest-cov>=4.0",
+]
+dev = [
+  "pytest>=8.0",
+  "pytest-cov>=4.0",
+  "build>=1.2.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["PLD_accounting*"]

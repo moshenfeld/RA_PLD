@@ -6,14 +6,52 @@ Runtime: Medium (~30-60 seconds)
 """
 import pytest
 import numpy as np
+from dp_accounting.pld import privacy_loss_distribution
+
 from PLD_accounting.types import PrivacyParams, AllocationSchemeConfig, Direction
 from PLD_accounting.random_allocation_accounting import allocation_PLD, numerical_allocation_epsilon
-from random_allocation.comparisons.experiments import Poisson_PLD, Poisson_epsilon_PLD
-from random_allocation.comparisons.structs import Direction as PoissonDirection
-from random_allocation.comparisons.structs import PrivacyParams as PoissonPrivacyParams
-from random_allocation.comparisons.structs import SchemeConfig as PoissonSchemeConfig
 from PLD_accounting.types import ConvolutionMethod, BoundType
 
+
+def _poisson_pld_dp_accounting(
+    sigma: float,
+    num_steps: int,
+    num_epochs: int,
+    sampling_prob: float,
+    discretization: float,
+):
+    """Construct Poisson-subsampled Gaussian PLD using dp_accounting only."""
+    if sampling_prob <= 0.0 or sampling_prob > 1.0:
+        raise ValueError(f"sampling_prob must be in (0, 1], got {sampling_prob}")
+
+    kwargs = dict(
+        standard_deviation=sigma,
+        sensitivity=1.0,
+        value_discretization_interval=discretization,
+        pessimistic_estimate=True,
+    )
+    if sampling_prob < 1.0:
+        kwargs["sampling_prob"] = sampling_prob
+    base_pld = privacy_loss_distribution.from_gaussian_mechanism(**kwargs)
+
+    total_steps = int(num_steps * num_epochs)
+    return base_pld.self_compose(total_steps)
+
+
+def _poisson_epsilon_dp_accounting(
+    params: PrivacyParams,
+    discretization: float,
+    sampling_prob: float,
+) -> float:
+    """Compute epsilon for Poisson-subsampled Gaussian PLD with dp_accounting."""
+    pld = _poisson_pld_dp_accounting(
+        sigma=params.sigma,
+        num_steps=params.num_steps,
+        num_epochs=params.num_epochs,
+        sampling_prob=sampling_prob,
+        discretization=discretization,
+    )
+    return pld.get_epsilon_for_delta(params.delta)
 
 
 class TestAllocationPLDconv:
@@ -257,13 +295,12 @@ class TestPoissonPLD:
         # Poisson sampling probability
         sampling_prob = params.num_selected / 100  # Assuming dataset size ~100
 
-        pld = Poisson_PLD(
+        pld = _poisson_pld_dp_accounting(
             sigma=params.sigma,
             num_steps=params.num_steps,
             num_epochs=params.num_epochs,
             sampling_prob=sampling_prob,
-            discretization=0.01,  # Finer discretization for small delta
-            direction=PoissonDirection.REMOVE
+            discretization=0.01,
         )
 
         # Check PLD is valid
@@ -272,22 +309,20 @@ class TestPoissonPLD:
         assert epsilon > 0
 
     def test_poisson_epsilon_wrapper(self):
-        """Test Poisson_epsilon_PLD wrapper."""
-        # Create Poisson package params
-        poisson_params = PoissonPrivacyParams(
+        """Test Poisson epsilon helper implemented with dp_accounting."""
+        poisson_params = PrivacyParams(
             sigma=1.0,
             num_steps=10,
             num_epochs=1,
             num_selected=5,
             delta=1e-5
         )
-        poisson_config = PoissonSchemeConfig(discretization=0.1)
+        discretization = 0.1
 
-        epsilon = Poisson_epsilon_PLD(
+        epsilon = _poisson_epsilon_dp_accounting(
             params=poisson_params,
-            config=poisson_config,
+            discretization=discretization,
             sampling_prob=1.0,
-            direction=PoissonDirection.REMOVE
         )
 
         assert epsilon > 0
@@ -305,21 +340,19 @@ class TestPoissonPLD:
         )
         config = AllocationSchemeConfig(loss_discretization=0.02, tail_truncation=0.1, max_grid_FFT=100000)
 
-        # Poisson params
-        poisson_params = PoissonPrivacyParams(
+        poisson_params = PrivacyParams(
             sigma=1.0,
             num_steps=10,
             num_epochs=1,
             num_selected=5,
             delta=1e-5
         )
-        poisson_config = PoissonSchemeConfig(discretization=0.1)
+        discretization = 0.1
 
-        eps_poisson = Poisson_epsilon_PLD(
+        eps_poisson = _poisson_epsilon_dp_accounting(
             params=poisson_params,
-            config=poisson_config,
+            discretization=discretization,
             sampling_prob=1.0,
-            direction=PoissonDirection.REMOVE
         )
 
         eps_allocation = numerical_allocation_epsilon(

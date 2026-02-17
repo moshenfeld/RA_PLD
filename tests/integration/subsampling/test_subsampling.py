@@ -17,7 +17,6 @@ from PLD_accounting.subsample_PLD import (
 )
 from PLD_accounting.discrete_dist import DiscreteDist
 from PLD_accounting.types import Direction, BoundType
-from comparisons.experiments.subsampling_comparison import run_subsampling_comparison_experiment
 from tests.integration.subsampling.analytic_gaussian import gaussian_pld
 
 
@@ -243,53 +242,3 @@ class TestSubsampleDistDual:
         assert np.sum(subsampled.PMF_array > 1e-10) > 0
 
 
-class TestSubsamplingComparisonExperiment:
-    """Sanity checks for subsampling comparison experiment outputs."""
-
-    def test_subsampling_comparison_remove(self):
-        results = run_subsampling_comparison_experiment(
-            sigma=1.0,
-            sampling_prob=0.1,
-            discretization=0.002,
-            sensitivity=1.0,
-            include_our_implementation=True,
-            direction="remove",
-        )
-        assert "remove" in results
-        assert "add" not in results
-        remove = results["remove"]
-        versions = remove["versions"]
-        names = {v["name"] for v in versions}
-        assert {"TF_TF", "TF_Our", "GT_Our", "GT_GT"}.issubset(names)
-        for version in versions:
-            assert len(version["eps"]) == len(remove["delta_values"])
-
-    def test_subsampling_comparison_add(self):
-        results = run_subsampling_comparison_experiment(
-            sigma=1.0,
-            sampling_prob=0.1,
-            discretization=0.002,
-            sensitivity=1.0,
-            include_our_implementation=True,
-            direction="add",
-        )
-        assert "add" in results
-        assert "remove" not in results
-        add = results["add"]
-        versions = add["versions"]
-        names = {v["name"] for v in versions}
-        assert {"TF_TF", "TF_Our", "GT_Our", "GT_GT"}.issubset(names)
-        for version in versions:
-            assert len(version["eps"]) == len(add["delta_values"])
-
-    def test_subsampling_comparison_both(self):
-        results = run_subsampling_comparison_experiment(
-            sigma=1.0,
-            sampling_prob=0.1,
-            discretization=0.002,
-            sensitivity=1.0,
-            include_our_implementation=True,
-            direction="both",
-        )
-        assert "remove" in results
-        assert "add" in results
