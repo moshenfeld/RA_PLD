@@ -19,19 +19,7 @@ Numerical privacy accounting for random allocation and subsampling using Privacy
 
 ## Installation
 
-### From TestPyPI (Current)
-
-The package is currently available on TestPyPI:
-
-```bash
-pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ PLD_accounting
-```
-
-**Note**: The `--extra-index-url` ensures dependencies are installed from the main PyPI.
-
-### From PyPI (After Official Release)
-
-After the official release, you can install directly:
+### From PyPI
 
 ```bash
 pip install PLD_accounting

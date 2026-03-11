@@ -1,13 +1,10 @@
 """
-Usage example for the RA-PLD privacy accounting library.
+Usage example for the PLD_accounting privacy accounting library.
 
 This library computes tight (epsilon, delta)-DP guarantees for the random
 allocation subsampling scheme using Privacy Loss Distributions (PLDs).
 
-Installation (currently on TestPyPI):
-    pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ PLD_accounting
-
-After official PyPI release:
+Installation:
     pip install PLD_accounting
 
 Or from source:
