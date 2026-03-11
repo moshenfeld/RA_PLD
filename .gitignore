@@ -39,7 +39,7 @@ Thumbs.db
 planning/
 
 # Design principles (development documentation)
-docs/DESIGN_PRINCIPLES.md
+DESIGN_PRINCIPLES.md
 
 # Claude Code
 .claude/

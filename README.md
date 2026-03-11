@@ -1,4 +1,4 @@
-# RA_PLD
+# PLD_accounting
 
 Numerical privacy accounting for random allocation and subsampling using Privacy Loss Distributions (PLDs).
 
@@ -17,39 +17,65 @@ Numerical privacy accounting for random allocation and subsampling using Privacy
 - `tests/`: unit and integration tests.
 - `usage_example.py`: executable usage examples for common workflows.
 
-## Requirements
+## Installation
 
-Dependency definitions live in `pyproject.toml` (single source of truth).
+### From TestPyPI (Current)
 
-Install package (runtime):
+The package is currently available on TestPyPI:
 
 ```bash
+pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ PLD_accounting
+```
+
+**Note**: The `--extra-index-url` ensures dependencies are installed from the main PyPI.
+
+### From PyPI (After Official Release)
+
+After the official release, you can install directly:
+
+```bash
+pip install PLD_accounting
+```
+
+### From Source
+
+Clone the repository and install:
+
+```bash
+git clone https://github.com/moshenfeld/PLD_accounting.git
+cd PLD_accounting
 pip install .
 ```
 
-Install as a local package (recommended):
+### Development Installation
+
+For local development with editable installation:
 
 ```bash
 pip install -e .
 ```
 
-Install package with test extras:
+Install with test extras:
 
 ```bash
 pip install -e ".[test]"
 ```
 
-Install development dependencies:
+Install with development dependencies:
 
 ```bash
 pip install ".[dev]"
 ```
 
-A compatibility wrapper is also provided:
+## Requirements
 
-```bash
-pip install -r requirements.txt
-```
+- Python >= 3.10
+- numpy >= 1.23
+- scipy >= 1.10
+- numba >= 0.58
+- dp-accounting >= 0.4.3
+
+All dependencies are automatically installed with the package.
 
 ## Quick Start
 
@@ -85,11 +111,58 @@ eps = numerical_allocation_epsilon(
 print(eps)
 ```
 
+Direct import from the dedicated random-allocation API module:
+
+```python
+from PLD_accounting.random_allocation_api import (
+    allocation_PLD,
+    numerical_allocation_epsilon_range,
+    numerical_allocation_epsilon,
+)
+from PLD_accounting.types import AllocationSchemeConfig, BoundType, Direction, PrivacyParams
+
+params = PrivacyParams(
+    sigma=3.0,
+    num_steps=200,
+    num_selected=10,
+    delta=1e-6,
+)
+config = AllocationSchemeConfig(
+    loss_discretization=0.05,
+    tail_truncation=1e-7,
+)
+
+eps = numerical_allocation_epsilon(
+    params=params,
+    config=config,
+    direction=Direction.BOTH,
+    bound_type=BoundType.DOMINATES,
+)
+
+pld = allocation_PLD(
+    params=params,
+    config=config,
+    direction=Direction.BOTH,
+    bound_type=BoundType.DOMINATES,
+)
+
+epsilon_upper, epsilon_lower = numerical_allocation_epsilon_range(
+    sigma=3.0,
+    num_steps=200,
+    delta=1e-6,
+    num_selected=10,
+    epsilon_accuracy=-1,  # any negative value resolves to 10% of the Poisson guess
+)
+print(epsilon_upper, epsilon_lower)
+```
+
 ## Main API
 
 - `allocation_PLD(params, config, direction, bound_type)`: returns a `dp_accounting` `PrivacyLossDistribution`.
 - `numerical_allocation_epsilon(params, config, direction, bound_type)`: computes `epsilon` for `params.delta`.
 - `numerical_allocation_delta(params, config, direction, bound_type)`: computes `delta` for `params.epsilon`.
+- `numerical_allocation_epsilon_range(sigma, num_steps, delta, ...)`: adaptively refines resolution and returns `(upper_bound, lower_bound)` for epsilon.
+- `numerical_allocation_delta_range(sigma, num_steps, epsilon, ...)`: adaptively refines resolution and returns `(upper_bound, lower_bound)` for delta.
 - `subsample_PLD(pld, sampling_probability, bound_type)`: applies subsampling amplification to an existing PLD.
 
 ## Important Parameter Notes
@@ -99,6 +172,12 @@ print(eps)
 - `loss_discretization` controls the accuracy/runtime tradeoff; smaller values are tighter but slower and larger-memory.
 - `max_grid_FFT` and `max_grid_mult` cap grid sizes; too-small budgets can invalidate a run.
 - `bound_type=DOMINATES` is pessimistic (upper bound), `IS_DOMINATED` is optimistic (lower bound).
+- Adaptive queries treat any negative `target_accuracy` as a convenience default:
+  - epsilon query: `target_accuracy = 0.10 *` Poisson-estimated epsilon
+  - delta query: `target_accuracy = 0.10 *` Poisson-estimated delta
+- Adaptive initialization now starts from a Poisson-subsampled Gaussian guess with:
+  - sampling probability `num_selected / num_steps`
+  - composition count `num_selected * num_epochs`
 
 ## Running Tests
 
@@ -124,4 +203,5 @@ python -m build
 
 - `usage_example.py` includes direct epsilon queries.
 - `usage_example.py` includes PLD construction and repeated epsilon lookups.
+- `usage_example.py` includes adaptive random-allocation queries through `PLD_accounting.random_allocation_api`.
 - `usage_example.py` includes a subsampling + composition workflow.

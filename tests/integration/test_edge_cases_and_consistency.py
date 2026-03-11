@@ -18,7 +18,7 @@ from PLD_accounting.distribution_discretization import (
     discretize_continuous_distribution,
     change_spacing_type
 )
-from PLD_accounting.random_allocation_accounting import numerical_allocation_epsilon
+from PLD_accounting.random_allocation_api import numerical_allocation_epsilon
 from tests.test_tolerances import TestTolerances as TOL
 
 

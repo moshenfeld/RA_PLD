@@ -28,8 +28,8 @@ from PLD_accounting.types import (
 )
 from PLD_accounting.discrete_dist import GeneralDiscreteDist, GeometricDiscreteDist, LinearDiscreteDist
 from PLD_accounting.random_allocation_accounting import (
-    _allocation_PMF,
-    _compute_conv_params,
+    allocation_PMF,
+    compute_conv_params,
 )
 from tests.test_tolerances import TestTolerances as TOL
 
@@ -256,8 +256,8 @@ def test_best_of_two_allocation_pmf(direction, bound_type):
         max_grid_FFT=2048,
         convolution_method=ConvolutionMethod.BEST_OF_TWO
     )
-    conv_params = _compute_conv_params(params=params, config=config)
-    dist = _allocation_PMF(
+    conv_params = compute_conv_params(params=params, config=config)
+    dist = allocation_PMF(
         conv_params=conv_params,
         direction=direction,
         bound_type=bound_type,
@@ -277,7 +277,7 @@ def test_best_of_two_allocation_pmf(direction, bound_type):
 )
 @pytest.mark.parametrize("direction", [Direction.ADD, Direction.REMOVE])
 def test_allocation_pmf_methods_dominate(direction, method):
-    """Smoke-test _allocation_PMF for all methods with DOMINATES bound."""
+    """Smoke-test allocation_PMF for all methods with DOMINATES bound."""
     params = PrivacyParams(
         sigma=1.0,
         num_steps=4,
@@ -292,8 +292,8 @@ def test_allocation_pmf_methods_dominate(direction, method):
         max_grid_FFT=2048,
         convolution_method=method
     )
-    conv_params = _compute_conv_params(params=params, config=config)
-    dist = _allocation_PMF(
+    conv_params = compute_conv_params(params=params, config=config)
+    dist = allocation_PMF(
         conv_params=conv_params,
         direction=direction,
         bound_type=BoundType.DOMINATES,
