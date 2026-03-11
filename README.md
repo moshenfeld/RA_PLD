@@ -111,50 +111,7 @@ eps = numerical_allocation_epsilon(
 print(eps)
 ```
 
-Direct import from the dedicated random-allocation API module:
-
-```python
-from PLD_accounting.random_allocation_api import (
-    allocation_PLD,
-    numerical_allocation_epsilon_range,
-    numerical_allocation_epsilon,
-)
-from PLD_accounting.types import AllocationSchemeConfig, BoundType, Direction, PrivacyParams
-
-params = PrivacyParams(
-    sigma=3.0,
-    num_steps=200,
-    num_selected=10,
-    delta=1e-6,
-)
-config = AllocationSchemeConfig(
-    loss_discretization=0.05,
-    tail_truncation=1e-7,
-)
-
-eps = numerical_allocation_epsilon(
-    params=params,
-    config=config,
-    direction=Direction.BOTH,
-    bound_type=BoundType.DOMINATES,
-)
-
-pld = allocation_PLD(
-    params=params,
-    config=config,
-    direction=Direction.BOTH,
-    bound_type=BoundType.DOMINATES,
-)
-
-epsilon_upper, epsilon_lower = numerical_allocation_epsilon_range(
-    sigma=3.0,
-    num_steps=200,
-    delta=1e-6,
-    num_selected=10,
-    epsilon_accuracy=-1,  # any negative value resolves to 10% of the Poisson guess
-)
-print(epsilon_upper, epsilon_lower)
-```
+For more comprehensive examples including PLD construction, adaptive queries, and subsampling workflows, see [usage_example.py](usage_example.py).
 
 ## Main API
 
@@ -201,7 +158,8 @@ python -m build
 
 ## Examples
 
-- `usage_example.py` includes direct epsilon queries.
-- `usage_example.py` includes PLD construction and repeated epsilon lookups.
-- `usage_example.py` includes adaptive random-allocation queries through `PLD_accounting.random_allocation_api`.
-- `usage_example.py` includes a subsampling + composition workflow.
+See [usage_example.py](usage_example.py) for comprehensive examples including:
+- Direct epsilon/delta queries
+- PLD construction and repeated lookups
+- Adaptive random-allocation queries
+- Subsampling and composition workflows

@@ -1,117 +1,101 @@
 # Implementation Overview
 
-This document explains the architecture and numerical design of this repository, and how the implementation supports the intended privacy-bound guarantees.
+This document explains the conceptual architecture and design approach of PLD_accounting. For installation, API reference, and code examples, see [README.md](README.md).
 
-## 1. Core Design Goals
+## Repository Structure
 
-- Keep upper-bound and lower-bound accounting explicit at every stage.
-- Preserve mass and tail semantics under discretization, transforms, and composition.
-- Support both accurate and practical runtime paths through interchangeable convolution backends.
-- Make each stage reusable: discretize, transform, convolve, convert, and query.
+The codebase is organized into focused modules:
 
-## 2. Data Model
+### Core Library (`PLD_accounting/`)
 
-The central internal type is `DiscreteDist` (`PLD_accounting/discrete_dist.py`):
+- **`types.py`**: Core type definitions (`BoundType`, `Direction`, `PrivacyParams`, etc.)
+- **`discrete_dist.py`**: Internal distribution representation with explicit mass tracking
+- **`distribution_discretization.py`**: Continuous-to-discrete conversion with domination-aware rounding
+- **`convolution_API.py`**: Dispatcher for composition operations
+- **`FFT_convolution.py`**: Linear-grid convolution via FFT
+- **`geometric_convolution.py`**: Multiplicative-grid convolution for positive supports
+- **`random_allocation_accounting.py`**: Core accounting logic for random allocation mechanisms
+- **`random_allocation_api.py`**: High-level user-facing API (adaptive queries, epsilon/delta computation)
+- **`adaptive_random_allocation.py`**: Adaptive resolution refinement for tight bounds
+- **`subsample_PLD.py`**: Subsampling amplification in PLD space
+- **`dp_accounting_support.py`**: Interop layer with Google's `dp_accounting` library
+- **`core_utils.py`**: Numerical utilities (mass conservation, compensated summation)
+- **`utils.py`**: General utilities (binary exponentiation, etc.)
 
-- `x_array`: strictly increasing grid.
-- `PMF_array`: finite probability mass on that grid.
-- `p_neg_inf` and `p_pos_inf`: explicit mass at infinite endpoints.
+### Testing (`tests/`)
 
-Bound semantics are represented by `BoundType` (`PLD_accounting/types.py`):
+- **`unit/`**: Unit tests for individual functions and modules
+- **`integration/`**: End-to-end workflow tests
+- **`regression/`**: Backward compatibility tests
 
-- `DOMINATES`: pessimistic/upper-side bound.
-- `IS_DOMINATED`: optimistic/lower-side bound.
+### Examples
 
-Mass conservation and endpoint semantics are enforced by:
+- **`usage_example.py`**: Executable examples demonstrating common workflows
 
-- `DiscreteDist.validate_mass_conservation`.
-- `core_utils.enforce_mass_conservation`.
+## Conceptual Architecture
 
-## 3. Pipeline Stages
+PLD_accounting computes privacy guarantees by representing privacy loss as discrete probability distributions and maintaining rigorous upper/lower bounds throughout all numerical operations. The key insight is that by tracking the full distribution rather than using analytical bounds, we achieve significantly tighter privacy guarantees.
 
-### 3.1 Parameter Derivation
+## How It Works
 
-`compute_conv_params` in `PLD_accounting/random_allocation_accounting.py` converts user inputs into internal budgets:
+### Privacy Bounds
 
-- per-round composition steps,
-- per-stage truncation budgets,
-- per-stage discretization budgets,
-- grid sizes for FFT and geometric paths.
+The library maintains two types of bounds throughout all computations:
 
-### 3.2 Continuous-to-Discrete Construction
+- **Upper Bounds (DOMINATES)**: Conservative/pessimistic bounds on privacy loss
+- **Lower Bounds (IS_DOMINATED)**: Optimistic bounds on privacy loss
 
-`PLD_accounting/distribution_discretization.py` builds discrete approximations from continuous random variables using:
+These bounds ensure that the computed privacy guarantees are rigorous and verifiable.
 
-- linear or geometric grids,
-- domination-aware rounding rules,
-- stable `logcdf`/`logsf`-based probability extraction,
-- adaptive bin mass accumulation.
+### Privacy Loss Distributions
 
-### 3.3 Composition
+Privacy loss is represented as discrete probability distributions over a grid of possible loss values. The library:
 
-`PLD_accounting/convolution_API.py` dispatches to:
+1. Constructs discrete approximations from continuous random variables
+2. Applies privacy-relevant transformations
+3. Composes distributions across multiple operations
+4. Converts results to standard epsilon-delta privacy parameters
 
-- `PLD_accounting/FFT_convolution.py` for linear-spacing convolution.
-- `PLD_accounting/geometric_convolution.py` for geometric-spacing convolution.
+### Numerical Guarantees
 
-Repeated composition uses binary exponentiation (`PLD_accounting/utils.py`) to keep composition depth logarithmic in the number of rounds.
+The implementation maintains several critical properties:
 
-### 3.4 Direction-Specific Accounting
+- **Mass Conservation**: Probability mass is preserved across all operations
+- **Tail Semantics**: Explicit tracking of probability mass at infinite endpoints
+- **Stable Computation**: Uses compensated summation and log-space arithmetic to maintain numerical stability
+- **Bound Consistency**: Ensures upper/lower bound semantics are preserved through all transformations
 
-`_allocation_PMF_remove` and `_allocation_PMF_add` compute direction-dependent transformed random variables, compose them, and map results back to privacy-loss space.
+### Convolution Methods
 
-### 3.5 Final PLD Conversion
+The library offers multiple convolution strategies with different performance characteristics:
 
-`allocation_PLD` converts internal `DiscreteDist` objects into `dp_accounting` PMFs via `PLD_accounting/dp_accounting_support.py`, enabling standard epsilon/delta queries.
+- **GEOM**: Optimized for multiplicative grids and positive supports
+- **FFT**: Efficient for linear-grid compositions with many rounds
+- **COMBINED/BEST_OF_TWO**: Hybrid approaches that combine methods to achieve tighter bounds
 
-## 4. Subsampling Design
+## Privacy Guarantees
 
-`PLD_accounting/subsample_PLD.py` applies subsampling directly in PLD space by combining:
+The library provides rigorous differential privacy guarantees by:
 
-- a stable subsampling loss transform,
-- dual-based construction for remove-direction mixture handling,
-- grid remapping with bound-aware rounding.
+1. Maintaining explicit bound directions (upper/lower) at every stage
+2. Using domination-aware rounding and truncation
+3. Preserving tail behavior through explicit infinity-mass tracking
+4. Ensuring all numerical operations maintain bound consistency
 
-This keeps subsampling compatible with the same composition and bound-tracking machinery used for base accounting.
+Each computation stage produces a controlled approximation that remains consistent with the intended privacy guarantee semantics.
 
-## 5. Numerical Stability Strategy
+## Subsampling
 
-The implementation uses multiple safeguards:
+Subsampling is handled directly in privacy loss distribution space using:
 
-- compensated summation for cumulative operations,
-- explicit clipping/cleanup for FFT artifacts,
-- conservative endpoint/tail reassignment tied to bound semantics,
-- explicit finite/infinite mass tracking at each stage,
-- staged discretization and tail-budget scaling across composition layers.
+- Stable loss transforms for subsample probabilities
+- Dual-based construction for proper mixture handling
+- Grid remapping with bound-aware rounding
 
-## 6. Convolution Method Tradeoffs
+This ensures subsampling integrates seamlessly with the composition machinery.
 
-- `GEOM`: better aligned with multiplicative grids and positive supports.
-- `FFT`: efficient for large linear-grid compositions.
-- `COMBINED` and `BEST_OF_TWO`: hybrid strategies to tighten bounds by direction/method behavior.
+## API Integration
 
-## 7. Relation to Theory
+The library provides a thin compatibility layer with Google's `dp_accounting` library, converting internal `DiscreteDist` representations to standard `PrivacyLossDistribution` objects. This allows users to leverage existing tooling while benefiting from the tighter bounds computed by this library.
 
-Theoretical guarantees rely on maintaining order relationships between upper/lower privacy-loss representations through transformation and composition. The code reflects this by:
-
-- keeping bound direction explicit in public and internal APIs,
-- using domination-aware rounding and truncation semantics,
-- preserving tail behavior via explicit infinity-mass bookkeeping,
-- composing with operators that keep these relationships coherent.
-
-As a result, each numerical stage can be interpreted as a controlled approximation that remains consistent with the intended upper/lower guarantee semantics.
-
-## 8. Testing Strategy
-
-The test suite checks:
-
-- validation and mass-conservation invariants,
-- convolution behavior and backend consistency,
-- subsampling and direction semantics,
-- edge conditions and stress scenarios.
-
-Typical command:
-
-```bash
-pytest -q
-```
+For usage examples and API details, see [README.md](README.md).

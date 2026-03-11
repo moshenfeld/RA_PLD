@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from dp_accounting.pld import privacy_loss_distribution
 
-from PLD_accounting.adaptive_random_allocation import adaptive_convergence, estimate_poisson_query
+from PLD_accounting.adaptive_random_allocation import (
+    adaptive_delta_convergence,
+    adaptive_epsilon_convergence,
+)
 from PLD_accounting.dp_accounting_support import discrete_dist_to_dp_accounting_pmf
 from PLD_accounting.random_allocation_accounting import allocation_PMF, compute_conv_params
 from PLD_accounting.types import AllocationSchemeConfig, BoundType, Direction, PrivacyParams
@@ -153,47 +156,9 @@ def numerical_allocation_epsilon_range(
         delta=delta,
     )
 
-    estimated_epsilon = estimate_poisson_query(
-        params=params,
-        query_func=lambda pld: float(pld.get_epsilon_for_delta(delta)),
-    )
-
-    if epsilon_accuracy < 0:
-        epsilon_accuracy = 0.10 * estimated_epsilon
-    initial_discretization = epsilon_accuracy * 4
-    initial_tail_truncation = delta / 10
-
-    # For epsilon search, the current upper/lower epsilon gap is treated as the
-    # discretization-driven gap estimate.
-    def epsilon_discretization_gap(
-        pld: privacy_loss_distribution.PrivacyLossDistribution,
-        upper_value: float,
-        lower_value: float,
-        discretization: float,
-    ) -> float:
-        return max(0.0, upper_value - lower_value)
-
-    # Tail truncation effectively relaxes the delta budget, so compare epsilon at
-    # delta and delta + tail_truncation on the upper PLD.
-    def epsilon_tail_gap(
-        pld: privacy_loss_distribution.PrivacyLossDistribution,
-        upper_value: float,
-        lower_value: float,
-        tail_truncation: float,
-    ) -> float:
-        return max(
-            0.0,
-            float(pld.get_epsilon_for_delta(delta)) - float(pld.get_epsilon_for_delta(delta + tail_truncation)),
-        )
-
-    result = adaptive_convergence(
+    result = adaptive_epsilon_convergence(
         params=params,
         target_accuracy=epsilon_accuracy,
-        initial_discretization=initial_discretization,
-        initial_tail_truncation=initial_tail_truncation,
-        query_func=lambda pld: float(pld.get_epsilon_for_delta(delta)),
-        discretization_gap_func=epsilon_discretization_gap,
-        tail_gap_func=epsilon_tail_gap,
         pld_builder=allocation_PLD,
     )
     return result.upper_bound, result.lower_bound
@@ -229,47 +194,9 @@ def numerical_allocation_delta_range(
         epsilon=epsilon,
     )
 
-    estimated_delta = estimate_poisson_query(
-        params=params,
-        query_func=lambda pld: float(pld.get_delta_for_epsilon(epsilon)),
-    )
-
-    if delta_accuracy < 0:
-        delta_accuracy = 0.10 * estimated_delta
-    initial_discretization = epsilon / 2
-    initial_tail_truncation = delta_accuracy
-
-    # For delta search, discretization slack is modeled as shifting the epsilon
-    # threshold on the upper PLD by the current loss discretization.
-    def delta_discretization_gap(
-        pld: privacy_loss_distribution.PrivacyLossDistribution,
-        upper_value: float,
-        lower_value: float,
-        discretization: float,
-    ) -> float:
-        return max(
-            0.0,
-            float(pld.get_delta_for_epsilon(epsilon)) - float(pld.get_delta_for_epsilon(epsilon + discretization)),
-        )
-
-    # The current upper/lower delta separation is treated as the tail-driven gap
-    # estimate for delta search.
-    def delta_tail_gap(
-        pld: privacy_loss_distribution.PrivacyLossDistribution,
-        upper_value: float,
-        lower_value: float,
-        tail_truncation: float,
-    ) -> float:
-        return max(0.0, upper_value - lower_value)
-
-    result = adaptive_convergence(
+    result = adaptive_delta_convergence(
         params=params,
         target_accuracy=delta_accuracy,
-        initial_discretization=initial_discretization,
-        initial_tail_truncation=initial_tail_truncation,
-        query_func=lambda pld: float(pld.get_delta_for_epsilon(epsilon)),
-        discretization_gap_func=delta_discretization_gap,
-        tail_gap_func=delta_tail_gap,
         pld_builder=allocation_PLD,
     )
     return result.upper_bound, result.lower_bound
