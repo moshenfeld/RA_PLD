@@ -16,7 +16,7 @@ from PLD_accounting.types import (
     Direction,
     PrivacyParams,
 )
-from PLD_accounting.random_allocation_accounting import _allocation_PMF, _compute_conv_params
+from PLD_accounting.random_allocation_accounting import allocation_PMF, compute_conv_params
 
 
 def _upper_to_lower(dist: GeneralDiscreteDist) -> GeneralDiscreteDist:
@@ -71,8 +71,8 @@ class TestPLDDualRealisticScenarios:
             convolution_method=ConvolutionMethod.GEOM
         )
 
-        conv_params = _compute_conv_params(params=params, config=config)
-        remove_upper = _allocation_PMF(
+        conv_params = compute_conv_params(params=params, config=config)
+        remove_upper = allocation_PMF(
             conv_params=conv_params,
             direction=Direction.REMOVE,
             bound_type=BoundType.DOMINATES,
@@ -106,8 +106,8 @@ class TestPLDDualRealisticScenarios:
             convolution_method=ConvolutionMethod.GEOM
         )
 
-        conv_params = _compute_conv_params(params=params, config=config)
-        add_upper = _allocation_PMF(
+        conv_params = compute_conv_params(params=params, config=config)
+        add_upper = allocation_PMF(
             conv_params=conv_params,
             direction=Direction.ADD,
             bound_type=BoundType.DOMINATES,
@@ -142,10 +142,10 @@ class TestPLDDualRealisticScenarios:
             convolution_method=ConvolutionMethod.GEOM
         )
 
-        conv_params = _compute_conv_params(params=params, config=config)
+        conv_params = compute_conv_params(params=params, config=config)
 
         for direction in [Direction.REMOVE, Direction.ADD]:
-            upper = _allocation_PMF(
+            upper = allocation_PMF(
                 conv_params=conv_params,
                 direction=direction,
                 bound_type=BoundType.DOMINATES,

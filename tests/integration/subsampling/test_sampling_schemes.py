@@ -9,7 +9,7 @@ import numpy as np
 from dp_accounting.pld import privacy_loss_distribution
 
 from PLD_accounting.types import PrivacyParams, AllocationSchemeConfig, Direction
-from PLD_accounting.random_allocation_accounting import allocation_PLD, numerical_allocation_epsilon
+from PLD_accounting.random_allocation_api import allocation_PLD, numerical_allocation_epsilon
 from PLD_accounting.types import ConvolutionMethod, BoundType
 
 

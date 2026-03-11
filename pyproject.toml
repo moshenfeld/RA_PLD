@@ -3,15 +3,20 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "ra-pld"
-version = "0.1.0"
+name = "PLD_accounting"
+version = "0.1.4"
 description = "Numerical privacy accounting for random allocation and subsampling using PLDs."
 readme = "README.md"
 requires-python = ">=3.10"
-license = { file = "LICENSE" }
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [
   { name = "Moshe Shenfeld" }
 ]
+maintainers = [
+  { name = "Moshe Shenfeld" }
+]
+urls = { Homepage = "https://github.com/moshenfeld/PLD_accounting", Repository = "https://github.com/moshenfeld/PLD_accounting", Issues = "https://github.com/moshenfeld/PLD_accounting/issues" }
 keywords = [
   "differential privacy",
   "privacy accounting",
@@ -22,7 +27,6 @@ classifiers = [
   "Development Status :: 3 - Alpha",
   "Intended Audience :: Science/Research",
   "Intended Audience :: Developers",
-  "License :: OSI Approved :: MIT License",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3 :: Only",
   "Programming Language :: Python :: 3.10",
@@ -36,6 +40,7 @@ dependencies = [
   "scipy>=1.10",
   "numba>=0.58",
   "dp-accounting>=0.4.3",
+  "typing-extensions>=4.0",
 ]
 
 [project.optional-dependencies]

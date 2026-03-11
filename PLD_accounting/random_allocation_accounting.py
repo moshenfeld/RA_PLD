@@ -1,8 +1,6 @@
 from scipy import stats
 import numpy as np
 
-from dp_accounting.pld import privacy_loss_distribution
-
 from dataclasses import dataclass
 
 from PLD_accounting.types import *
@@ -33,7 +31,7 @@ class _ConvParams:
     max_grid_FFT: int
 
 
-def _compute_conv_params(
+def compute_conv_params(
     params: PrivacyParams,
     config: AllocationSchemeConfig
 ) -> _ConvParams:
@@ -84,6 +82,33 @@ def _compute_conv_params(
 # Computation of random variables dominating / dominated by the PLD 
 # in the add / remove direction using FFT / geometric method
 # =============================================================================
+
+def _build_shared_geometric_grid(
+    dist: stats.rv_continuous,
+    tail_truncation: float,
+    log_step: float,
+) -> np.ndarray:
+    """Build a geometric grid snapped to a shared log-space lattice."""
+    x_min = dist.ppf(tail_truncation)
+    x_max = dist.isf(tail_truncation)
+    if not np.isfinite(x_min) or not np.isfinite(x_max):
+        raise ValueError(f"Quantiles not finite: x_min={x_min}, x_max={x_max}")
+    if x_min <= 0.0:
+        raise ValueError(f"Geometric spacing requires positive values, got x_min={x_min}, x_max={x_max}")
+    if x_max <= x_min:
+        raise ValueError(f"x_max must be greater than x_min, got x_min={x_min}, x_max={x_max}")
+
+    start_idx = int(np.floor(np.log(x_min) / log_step))
+    stop_idx = int(np.ceil(np.log(x_max) / log_step))
+    x_array = np.exp(log_step * np.arange(start_idx, stop_idx + 1, dtype=np.float64))
+
+    support_min, support_max = dist.support()
+    if np.isfinite(support_min):
+        x_array = x_array[x_array > support_min]
+    if np.isfinite(support_max):
+        x_array = x_array[x_array < support_max]
+    return x_array
+
 
 def _allocation_PMF_remove_fft(
     conv_params: _ConvParams,
@@ -187,13 +212,31 @@ def _allocation_PMF_remove_geom(
     upper_norm_mean = sigma**2 / 2 - np.log(num_steps)
 
     exp_L_QP_neg = stats.lognorm(s=sigma, scale=np.exp(lower_norm_mean))
-    base_dist_lower = discretize_continuous_distribution(
+    exp_L_PQ = stats.lognorm(s=sigma, scale=np.exp(upper_norm_mean))
+
+    lower_x_min = exp_L_QP_neg.ppf(discretization_tail_truncation)
+    lower_x_max = exp_L_QP_neg.isf(discretization_tail_truncation)
+    upper_x_min = exp_L_PQ.ppf(discretization_tail_truncation)
+    upper_x_max = exp_L_PQ.isf(discretization_tail_truncation)
+    log_span = max(
+        np.log(lower_x_max / lower_x_min),
+        np.log(upper_x_max / upper_x_min),
+    )
+    shared_log_step = log_span / (conv_params.n_grid_geom - 1)
+
+    # Build both remove-direction factors on the same geometric lattice. Independent
+    # endpoint alignment can add an extra interval to only one side, which changes
+    # its ratio and makes the downstream geometric convolution invalid.
+    base_dist_lower = discretize_continuous_to_pmf(
         dist=exp_L_QP_neg,
-        tail_truncation=discretization_tail_truncation,
+        x_array=_build_shared_geometric_grid(
+            dist=exp_L_QP_neg,
+            tail_truncation=discretization_tail_truncation,
+            log_step=shared_log_step,
+        ),
         bound_type=bound_type,
+        PMF_min_increment=discretization_tail_truncation,
         spacing_type=SpacingType.GEOMETRIC,
-        n_grid=conv_params.n_grid_geom,
-        align_to_multiples=True,
     )
     assert isinstance(base_dist_lower, GeometricDiscreteDist)
     conv_dist_lower = geometric_self_convolve(
@@ -203,14 +246,16 @@ def _allocation_PMF_remove_geom(
         bound_type=bound_type,
     )
 
-    exp_L_PQ = stats.lognorm(s=sigma, scale=np.exp(upper_norm_mean))
-    base_dist_upper = discretize_continuous_distribution(
+    base_dist_upper = discretize_continuous_to_pmf(
         dist=exp_L_PQ,
-        tail_truncation=discretization_tail_truncation,
+        x_array=_build_shared_geometric_grid(
+            dist=exp_L_PQ,
+            tail_truncation=discretization_tail_truncation,
+            log_step=shared_log_step,
+        ),
         bound_type=bound_type,
+        PMF_min_increment=discretization_tail_truncation,
         spacing_type=SpacingType.GEOMETRIC,
-        n_grid=conv_params.n_grid_geom,
-        align_to_multiples=True,
     )
     assert isinstance(base_dist_upper, GeometricDiscreteDist)
 
@@ -370,11 +415,11 @@ def _finalize_allocation_dist(
     return final_dist
 
 
-def _allocation_PMF(conv_params: _ConvParams,
-                    direction: Direction,
-                    bound_type: BoundType,
-                    convolution_method: ConvolutionMethod,
-                    ) -> LinearDiscreteDist:
+def allocation_PMF(conv_params: _ConvParams,
+                   direction: Direction,
+                   bound_type: BoundType,
+                   convolution_method: ConvolutionMethod,
+                   ) -> LinearDiscreteDist:
     """Compute ADD/REMOVE direction distribution using FFT, geometric, or combined bounds."""
     if direction == Direction.ADD:
         conv_func = _allocation_PMF_add
@@ -415,98 +460,3 @@ def _allocation_PMF(conv_params: _ConvParams,
             bound_type=bound_type,
         )
     raise ValueError(f"Invalid convolution_method: {convolution_method}")
-
-# =============================================================================
-# Combined functions
-# =============================================================================
-
-def allocation_PLD(
-    params: PrivacyParams,
-    config: AllocationSchemeConfig,
-    direction: Direction = Direction.BOTH,
-    bound_type: BoundType = BoundType.DOMINATES,
-) -> privacy_loss_distribution.PrivacyLossDistribution:
-    """Compute composed allocation PLD using project convolution and dp_accounting output format.
-    """
-    if direction == Direction.ADD:
-        raise ValueError("PLD requires REMOVE direction PMF")
-    if bound_type == BoundType.BOTH:
-        raise ValueError(f"Allocation PLD does not support bound_type: {bound_type}")
-
-    conv_params = _compute_conv_params(params=params, config=config)
-
-    pessimistic = (bound_type == BoundType.DOMINATES)
-
-    remove_dist = _allocation_PMF(
-        conv_params=conv_params,
-        direction=Direction.REMOVE,
-        bound_type=bound_type,
-        convolution_method=config.convolution_method,
-    )
-    assert isinstance(remove_dist, LinearDiscreteDist)
-    pmf_remove = discrete_dist_to_dp_accounting_pmf(
-        dist=remove_dist,
-        pessimistic_estimate=pessimistic,
-    )
-    if direction == Direction.REMOVE:
-        return privacy_loss_distribution.PrivacyLossDistribution(
-            pmf_remove=pmf_remove,
-        )
-    add_dist = _allocation_PMF(
-        conv_params=conv_params,
-        direction=Direction.ADD,
-        bound_type=bound_type,
-        convolution_method=config.convolution_method,
-    )
-    assert isinstance(add_dist, LinearDiscreteDist)
-    pmf_add = discrete_dist_to_dp_accounting_pmf(
-        dist=add_dist,
-        pessimistic_estimate=pessimistic,
-    )
-    return privacy_loss_distribution.PrivacyLossDistribution(
-        pmf_remove=pmf_remove,
-        pmf_add=pmf_add,
-    )
-
-
-# =============================================================================
-# Convenience functions for epsilon/delta queries
-# =============================================================================
-
-def numerical_allocation_epsilon(
-    params: PrivacyParams,
-    config: AllocationSchemeConfig,
-    direction: Direction = Direction.BOTH,
-    bound_type: BoundType = BoundType.DOMINATES,
-) -> float:
-    """Compute epsilon for allocation scheme given delta.
-
-    Convenience wrapper around allocation_PLD that returns epsilon directly.
-
-    """
-    if bound_type == BoundType.BOTH:
-        raise ValueError(f"Delta function does not support bound_type: {bound_type}")
-    return allocation_PLD(
-        params=params,
-        config=config,
-        direction=direction,
-        bound_type=bound_type
-    ).get_epsilon_for_delta(params.delta)
-
-
-def numerical_allocation_delta(
-    params: PrivacyParams,
-    config: AllocationSchemeConfig,
-    direction: Direction = Direction.BOTH,
-    bound_type: BoundType = BoundType.DOMINATES,
-) -> float:
-    """Compute delta for allocation scheme given epsilon.
-
-    Convenience wrapper around allocation_PLD that returns delta directly.
-    """
-    return allocation_PLD(
-        params=params,
-        config=config,
-        direction=direction,
-        bound_type=bound_type
-    ).get_delta_for_epsilon(params.epsilon)

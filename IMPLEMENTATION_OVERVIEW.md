@@ -31,7 +31,7 @@ Mass conservation and endpoint semantics are enforced by:
 
 ### 3.1 Parameter Derivation
 
-`_compute_conv_params` in `PLD_accounting/random_allocation_accounting.py` converts user inputs into internal budgets:
+`compute_conv_params` in `PLD_accounting/random_allocation_accounting.py` converts user inputs into internal budgets:
 
 - per-round composition steps,
 - per-stage truncation budgets,

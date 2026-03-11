@@ -1,10 +1,13 @@
 """Public entry points for random-allocation privacy accounting."""
 
-from PLD_accounting.random_allocation_accounting import (
+from PLD_accounting.random_allocation_api import (
     allocation_PLD,
+    numerical_allocation_delta_range,
     numerical_allocation_delta,
+    numerical_allocation_epsilon_range,
     numerical_allocation_epsilon,
 )
+from PLD_accounting.random_allocation_accounting import allocation_PMF, compute_conv_params
 from PLD_accounting.subsample_PLD import subsample_PLD, subsample_PMF
 from PLD_accounting.types import (
     AllocationSchemeConfig,
@@ -22,8 +25,12 @@ __all__ = [
     "Direction",
     "PrivacyParams",
     "SpacingType",
+    "allocation_PMF",
     "allocation_PLD",
+    "compute_conv_params",
+    "numerical_allocation_delta_range",
     "numerical_allocation_delta",
+    "numerical_allocation_epsilon_range",
     "numerical_allocation_epsilon",
     "subsample_PLD",
     "subsample_PMF",
