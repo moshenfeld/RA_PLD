@@ -686,13 +686,14 @@ class TestAdaptiveConvergence:
                 return FakePLD(0.9 if bound_type == BoundType.DOMINATES else 0.0)
             return FakePLD(0.8 if bound_type == BoundType.DOMINATES else 0.0)
 
-        result = optimize_allocation_epsilon_range(
-            params=params,
-            target_accuracy=1e-12,
-            initial_discretization=0.2,
-            initial_tail_truncation=1e-3,
-            pld_builder=fake_builder,
-        )
+        with pytest.warns(RuntimeWarning, match="did not converge"):
+            result = optimize_allocation_epsilon_range(
+                params=params,
+                target_accuracy=1e-12,
+                initial_discretization=0.2,
+                initial_tail_truncation=1e-3,
+                pld_builder=fake_builder,
+            )
 
         assert not result.converged
         assert np.isclose(configs[0].loss_discretization, 0.1)

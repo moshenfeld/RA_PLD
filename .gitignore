@@ -35,11 +35,8 @@ Thumbs.db
 .ipynb_checkpoints/
 *.ipynb_checkpoints
 
-# Planning and development tracking
-planning/
-
-# Design principles (development documentation)
-DESIGN_PRINCIPLES.md
-
 # Claude Code
 .claude/
+
+# Local agent instructions
+instructions/
