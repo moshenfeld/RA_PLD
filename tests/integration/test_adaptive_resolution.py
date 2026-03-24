@@ -1,5 +1,6 @@
 """Integration tests for adaptive random-allocation queries."""
 
+from functools import partial
 import warnings
 
 import numpy as np
@@ -27,7 +28,8 @@ from PLD_accounting.random_allocation_api import (
     gaussian_allocation_epsilon_extended as gaussian_allocation_epsilon_extended_api,
     gaussian_allocation_epsilon_range as gaussian_allocation_epsilon_range_api,
 )
-from PLD_accounting.random_allocation_gaussian import allocation_PMF_from_gaussian, compute_conv_params
+from PLD_accounting.random_allocation_accounting import _allocation_PMF_core as allocation_PMF_core
+from PLD_accounting.random_allocation_gaussian import gaussian_allocation_PMF_core
 from PLD_accounting.types import BoundType, ConvolutionMethod, Direction
 
 
@@ -195,11 +197,20 @@ class TestAdaptivePublicApi:
             convolution_method=ConvolutionMethod.GEOM,
         )
 
-        dist = allocation_PMF_from_gaussian(
-            conv_params=compute_conv_params(params=params, config=config),
-            direction=Direction.REMOVE,
+        new_num_steps = params.num_steps // params.num_selected
+        dist = allocation_PMF_core(
+            num_steps=new_num_steps,
+            num_epochs=1,
+            compute_base_pmf=partial(
+                gaussian_allocation_PMF_core,
+                direction=Direction.REMOVE,
+                sigma=params.sigma,
+                config=config,
+                bound_type=BoundType.DOMINATES,
+            ),
+            loss_discretization=config.loss_discretization,
+            tail_truncation=config.tail_truncation,
             bound_type=BoundType.DOMINATES,
-            convolution_method=ConvolutionMethod.GEOM,
         )
 
         assert np.all(np.isfinite(dist.x_array))

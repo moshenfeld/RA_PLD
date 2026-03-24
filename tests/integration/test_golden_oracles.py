@@ -325,12 +325,13 @@ class TestGoldenOracleCompositionCounts:
         assert 0.0 <= delta <= 1.0
 
     def test_composition_count_invariant_floor_division(self):
-        """Golden oracle: Floor division invariant.
+        """Golden oracle: Remainder handling creates different distributions.
 
-        num_steps=7 and num_steps=8 with num_selected=3 should give
-        different results since floor(7/3)=2 but floor(8/3)=2.
+        num_steps=7 and num_steps=8 with num_selected=3:
+        - num_steps=7: floor(7/3)=2, remainder=1 → 2×dist(2) + 1×dist(3)
+        - num_steps=8: floor(8/3)=2, remainder=2 → 1×dist(2) + 2×dist(3)
 
-        Actually they should be the same!
+        Different remainder mixtures should give different results.
         """
         realization = PLDRealization(
             x_min=0.0,
@@ -364,19 +365,23 @@ class TestGoldenOracleCompositionCounts:
         delta_7 = float(pld_7.get_delta_for_epsilon(0.2))
         delta_8 = float(pld_8.get_delta_for_epsilon(0.2))
 
-        # Both should be identical (same inner composition count)
-        assert abs(delta_7 - delta_8) < 1e-12, (
-            f"Floor division invariant violated:\n"
+        # Should be DIFFERENT (different remainder mixtures)
+        assert abs(delta_7 - delta_8) > 1e-6, (
+            f"Expected different deltas due to remainder handling:\n"
             f"  delta(num_steps=7): {delta_7}\n"
             f"  delta(num_steps=8): {delta_8}\n"
-            f"  Both have floor(n/3)=2, should be identical"
+            f"  num_steps=7 uses 2×dist(2) + 1×dist(3)\n"
+            f"  num_steps=8 uses 1×dist(2) + 2×dist(3)"
         )
 
     def test_composition_count_change_floor_division(self):
-        """Golden oracle: Floor division changes at boundary.
+        """Golden oracle: Divisible case uses more steps than non-divisible.
 
         num_steps=8 and num_steps=9 with num_selected=3:
-        floor(8/3)=2 but floor(9/3)=3, so results should differ.
+        - num_steps=8: floor=2, remainder=2 → mixed dist(2) and dist(3)
+        - num_steps=9: floor=3, remainder=0 → pure dist(3), fully divisible
+
+        Divisible case should have higher delta (worse privacy).
         """
         realization = PLDRealization(
             x_min=0.0,
@@ -410,20 +415,20 @@ class TestGoldenOracleCompositionCounts:
         delta_8 = float(pld_8.get_delta_for_epsilon(0.2))
         delta_9 = float(pld_9.get_delta_for_epsilon(0.2))
 
-        # Results should differ (more compositions -> larger delta at fixed epsilon)
+        # Divisible case (num_steps=9) should have higher delta
         assert delta_9 > delta_8, (
-            f"Composition count change not reflected:\n"
-            f"  delta(num_steps=8, floor=2): {delta_8}\n"
-            f"  delta(num_steps=9, floor=3): {delta_9}\n"
+            f"Divisible case should have higher delta:\n"
+            f"  delta(num_steps=8, mixed): {delta_8}\n"
+            f"  delta(num_steps=9, divisible): {delta_9}\n"
             f"  Expected delta_9 > delta_8"
         )
 
-        # Difference should be material (one additional inner composition).
+        # Difference should be material but may be smaller with remainder handling
         ratio = delta_9 / delta_8
-        assert 1.2 < ratio < 3.0, (
+        assert 1.05 < ratio < 3.0, (
             f"Delta ratio outside expected range:\n"
             f"  ratio = {ratio:.3f}\n"
-            f"  Expected between 1.2 and 3.0 for one additional composition"
+            f"  Expected between 1.05 and 3.0 (remainder handling reduces gap)"
         )
 
 

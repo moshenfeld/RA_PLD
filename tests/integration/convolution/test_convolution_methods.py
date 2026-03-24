@@ -4,6 +4,7 @@ Integration tests for convolution methods.
 Tests geometric vs FFT convolution, self-convolution, and end-to-end workflows.
 Runtime: Fast (~5-10 seconds)
 """
+from functools import partial
 import numpy as np
 import pytest
 from scipy import stats
@@ -27,10 +28,8 @@ from PLD_accounting.types import (
     SpacingType,
 )
 from PLD_accounting.discrete_dist import GeneralDiscreteDist, GeometricDiscreteDist, LinearDiscreteDist
-from PLD_accounting.random_allocation_gaussian import (
-    allocation_PMF_from_gaussian,
-    compute_conv_params,
-)
+from PLD_accounting.random_allocation_accounting import _allocation_PMF_core as allocation_PMF_core
+from PLD_accounting.random_allocation_gaussian import gaussian_allocation_PMF_core
 from tests.test_tolerances import TestTolerances as TOL
 
 
@@ -256,12 +255,20 @@ def test_best_of_two_allocation_pmf(direction, bound_type):
         max_grid_FFT=2048,
         convolution_method=ConvolutionMethod.BEST_OF_TWO
     )
-    conv_params = compute_conv_params(params=params, config=config)
-    dist = allocation_PMF_from_gaussian(
-        conv_params=conv_params,
-        direction=direction,
+    new_num_steps = params.num_steps // params.num_selected
+    dist = allocation_PMF_core(
+        num_steps=new_num_steps,
+        num_epochs=1,
+        compute_base_pmf=partial(
+            gaussian_allocation_PMF_core,
+            direction=direction,
+            sigma=params.sigma,
+            config=config,
+            bound_type=bound_type,
+        ),
+        loss_discretization=config.loss_discretization,
+        tail_truncation=config.tail_truncation,
         bound_type=bound_type,
-        convolution_method=ConvolutionMethod.BEST_OF_TWO
     )
     dist.validate_mass_conservation(bound_type)
 
@@ -277,7 +284,7 @@ def test_best_of_two_allocation_pmf(direction, bound_type):
 )
 @pytest.mark.parametrize("direction", [Direction.ADD, Direction.REMOVE])
 def test_allocation_pmf_methods_dominate(direction, method):
-    """Smoke-test allocation_PMF_from_gaussian for all methods with DOMINATES bound."""
+    """Smoke-test gaussian_allocation_PMF_core for all methods with DOMINATES bound."""
     params = PrivacyParams(
         sigma=1.0,
         num_steps=4,
@@ -292,12 +299,20 @@ def test_allocation_pmf_methods_dominate(direction, method):
         max_grid_FFT=2048,
         convolution_method=method
     )
-    conv_params = compute_conv_params(params=params, config=config)
-    dist = allocation_PMF_from_gaussian(
-        conv_params=conv_params,
-        direction=direction,
+    new_num_steps = params.num_steps // params.num_selected
+    dist = allocation_PMF_core(
+        num_steps=new_num_steps,
+        num_epochs=1,
+        compute_base_pmf=partial(
+            gaussian_allocation_PMF_core,
+            direction=direction,
+            sigma=params.sigma,
+            config=config,
+            bound_type=BoundType.DOMINATES,
+        ),
+        loss_discretization=config.loss_discretization,
+        tail_truncation=config.tail_truncation,
         bound_type=BoundType.DOMINATES,
-        convolution_method=method
     )
     dist.validate_mass_conservation(BoundType.DOMINATES)
 

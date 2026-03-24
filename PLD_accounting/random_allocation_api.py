@@ -4,13 +4,16 @@ Public API surface for random-allocation accounting.
 
 from __future__ import annotations
 
+from functools import partial
+
 from dp_accounting.pld import privacy_loss_distribution
 
 from PLD_accounting.types import AllocationSchemeConfig, BoundType, ConvolutionMethod, Direction, PrivacyParams
 from PLD_accounting.discrete_dist import PLDRealization
 from PLD_accounting.adaptive_random_allocation import optimize_allocation_delta_range, optimize_allocation_epsilon_range
-from PLD_accounting.random_allocation_accounting import allocation_PMF_from_realization, compose_pld_from_pmfs, decompose_allocation_compositions
-from PLD_accounting.random_allocation_gaussian import allocation_PMF_from_gaussian, compute_conv_params
+from PLD_accounting.random_allocation_accounting import allocation_PLD, geometric_allocation_PMF_base_remove, geometric_allocation_PMF_base_add
+from PLD_accounting.random_allocation_gaussian import gaussian_allocation_PMF_core
+from PLD_accounting.random_allocation_realization import realization_remove_base_distributions, realization_add_base_distribution
 
 
 # =============================================================================
@@ -181,31 +184,28 @@ def gaussian_allocation_PLD(
     Returns:
         A ``dp_accounting`` ``PrivacyLossDistribution`` for both privacy directions.
     """
-    if bound_type == BoundType.BOTH:
-        raise ValueError(
-            "Allocation PLD does not support bound_type=BoundType.BOTH; "
-            "build separate DOMINATES and IS_DOMINATED PLDs instead"
-        )
 
-    conv_params = compute_conv_params(params=params, config=config)
-    pessimistic = bound_type == BoundType.DOMINATES
-
-    remove_dist = allocation_PMF_from_gaussian(
-        conv_params=conv_params,
+    compute_base_pmf_remove = partial(
+        gaussian_allocation_PMF_core,
         direction=Direction.REMOVE,
-        bound_type=bound_type,
-        convolution_method=config.convolution_method,
+        sigma=params.sigma,
+        config=config,
     )
-    add_dist = allocation_PMF_from_gaussian(
-        conv_params=conv_params,
+    compute_base_pmf_add = partial(
+        gaussian_allocation_PMF_core,
         direction=Direction.ADD,
-        bound_type=bound_type,
-        convolution_method=config.convolution_method,
+        sigma=params.sigma,
+        config=config,
     )
-    return compose_pld_from_pmfs(
-        remove_dist=remove_dist,
-        add_dist=add_dist,
-        pessimistic_estimate=pessimistic,
+    return allocation_PLD(
+        compute_base_pmf_remove=compute_base_pmf_remove,
+        compute_base_pmf_add=compute_base_pmf_add,
+        num_steps=params.num_steps,
+        num_selected=params.num_selected,
+        num_epochs=params.num_epochs,
+        loss_discretization=config.loss_discretization,
+        tail_truncation=config.tail_truncation,
+        bound_type=bound_type,
     )
 
 
@@ -331,11 +331,6 @@ def general_allocation_PLD(
     Notes:
         Supports only the GEOM convolution method.
     """
-    if bound_type == BoundType.BOTH:
-        raise ValueError(
-            "general_allocation_PLD does not support bound_type=BoundType.BOTH; "
-            "build separate DOMINATES and IS_DOMINATED PLDs instead"
-        )
     if not isinstance(remove_realization, PLDRealization):
         raise TypeError(
             f"general_allocation_PLD requires PLDRealization, got {type(remove_realization)}"
@@ -353,34 +348,28 @@ def general_allocation_PLD(
             "Use ConvolutionMethod.GEOM."
         )
 
-    num_steps_per_round, num_rounds = decompose_allocation_compositions(
+
+    compute_base_pmf_remove = partial(
+        geometric_allocation_PMF_base_remove,
+        base_distributions_creation=partial(
+            realization_remove_base_distributions,
+            realization=remove_realization,
+        )
+    )
+    compute_base_pmf_add = partial(
+        geometric_allocation_PMF_base_add,
+        base_distributions_creation=partial(
+            realization_add_base_distribution,
+            realization=add_realization,
+        )
+    )
+    return allocation_PLD(
+        compute_base_pmf_remove=compute_base_pmf_remove,
+        compute_base_pmf_add=compute_base_pmf_add,
         num_steps=num_steps,
         num_selected=num_selected,
         num_epochs=num_epochs,
-    )
-
-    pessimistic = bound_type == BoundType.DOMINATES
-
-    remove_dist = allocation_PMF_from_realization(
-        realization=remove_realization,
-        direction=Direction.REMOVE,
-        num_steps_per_round=num_steps_per_round,
-        num_rounds=num_rounds,
-        config=config,
+        loss_discretization=config.loss_discretization,
+        tail_truncation=config.tail_truncation,
         bound_type=bound_type,
-    )
-
-    add_dist = allocation_PMF_from_realization(
-        realization=add_realization,
-        direction=Direction.ADD,
-        num_steps_per_round=num_steps_per_round,
-        num_rounds=num_rounds,
-        config=config,
-        bound_type=bound_type,
-    )
-
-    return compose_pld_from_pmfs(
-        remove_dist=remove_dist,
-        add_dist=add_dist,
-        pessimistic_estimate=pessimistic,
     )

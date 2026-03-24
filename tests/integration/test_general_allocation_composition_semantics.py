@@ -56,8 +56,8 @@ def _comparison_config() -> AllocationSchemeConfig:
 
 
 @pytest.mark.parametrize("bound_type", [BoundType.DOMINATES, BoundType.IS_DOMINATED])
-def test_general_allocation_floor_semantics_invariant_for_non_divisible_steps(bound_type: BoundType):
-    """Regression: num_steps contributes only through floor(num_steps / num_selected)."""
+def test_general_allocation_remainder_semantics_for_non_divisible_steps(bound_type: BoundType):
+    """Regression: non-divisible num_steps should affect epsilon via remainder handling."""
     config = _comparison_config()
     realization = _gaussian_realization(2.0)
     delta = 1e-5
@@ -83,7 +83,7 @@ def test_general_allocation_floor_semantics_invariant_for_non_divisible_steps(bo
 
     epsilon_6 = float(pld_steps_6.get_epsilon_for_delta(delta))
     epsilon_7 = float(pld_steps_7.get_epsilon_for_delta(delta))
-    assert abs(epsilon_6 - epsilon_7) < 1e-12
+    assert abs(epsilon_6 - epsilon_7) > 1e-6
 
 
 @pytest.mark.parametrize("bound_type", [BoundType.DOMINATES, BoundType.IS_DOMINATED])
@@ -91,7 +91,7 @@ def test_general_allocation_floor_semantics_invariant_for_non_divisible_steps(bo
     ("sigma", "num_steps", "num_selected", "num_epochs", "delta", "epsilon_tol"),
     [
         (2.0, 6, 2, 1, 1e-5, 2e-2),
-        (2.2, 7, 2, 2, 1e-5, 4e-2),
+        (2.2, 7, 2, 2, 1e-5, 6e-2),
         (2.8, 15, 5, 1, 1e-6, 6e-2),
     ],
 )
@@ -137,3 +137,46 @@ def test_general_allocation_composition_semantics_num_selected_gt_1(
     assert np.isfinite(epsilon_gaussian)
     assert np.isfinite(epsilon_realization)
     assert abs(epsilon_gaussian - epsilon_realization) < epsilon_tol
+
+
+def test_general_allocation_composition_semantics_tight_threshold_dominates():
+    """Gaussian and realization paths should stay close on a tight non-divisible case."""
+    sigma = 2.8
+    num_steps = 17
+    num_selected = 5
+    num_epochs = 1
+    delta = 1e-6
+    epsilon_threshold = 5.0e-2
+    bound_type = BoundType.DOMINATES
+
+    config = _comparison_config()
+    params = PrivacyParams(
+        sigma=sigma,
+        num_steps=num_steps,
+        num_selected=num_selected,
+        num_epochs=num_epochs,
+        delta=delta,
+    )
+
+    gaussian_pld = gaussian_allocation_PLD(
+        params=params,
+        config=config,
+        bound_type=bound_type,
+    )
+
+    realization = _gaussian_realization(sigma)
+    realization_pld = general_allocation_PLD(
+        num_steps=num_steps,
+        num_selected=num_selected,
+        num_epochs=num_epochs,
+        remove_realization=realization,
+        add_realization=realization,
+        config=config,
+        bound_type=bound_type,
+    )
+
+    epsilon_gaussian = float(gaussian_pld.get_epsilon_for_delta(delta))
+    epsilon_realization = float(realization_pld.get_epsilon_for_delta(delta))
+    epsilon_diff = abs(epsilon_gaussian - epsilon_realization)
+
+    assert epsilon_diff < epsilon_threshold

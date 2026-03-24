@@ -18,19 +18,31 @@ API parameter mapping:
 - `num_epochs = number of epochs`
 
 In code, this decomposition is implemented in
-`decompose_allocation_compositions()` in
-`PLD_accounting/random_allocation_accounting.py`:
+`allocation_PMF()` in `PLD_accounting/random_allocation_accounting.py`:
 
-- `num_steps_per_round = floor(num_steps / num_selected)`
-- `num_rounds = num_selected * num_epochs`
+- Floor component:
+  - `floor_steps = floor(num_steps / num_selected)`
+  - `remainder = num_steps - num_selected * floor_steps`
+  - `floor_epochs = (num_selected - remainder) * num_epochs`
+- Ceil component (only when `remainder > 0`):
+  - `ceil_steps = floor_steps + 1`
+  - `ceil_epochs = remainder * num_epochs`
 
-This is the composition structure used by both Gaussian and realization paths.
+Both Gaussian and realization paths use the same floor/ceil decomposition and
+compose both components when needed.
+
+Input validation in `allocation_PMF()`:
+
+- `num_steps`, `num_selected`, and `num_epochs` must be at least `1`.
+- `num_steps` must be at least `num_selected` to ensure at least one
+  per-selection step.
 
 ## High-Level Pipeline
 
 1. Public API validates inputs and builds PMFs for REMOVE and ADD directions.
 2. Per-round random-allocation PMFs are computed in loss-space via exp-space convolution helpers.
-3. Per-round PMFs are composed across `num_rounds`.
+3. Floor/ceil PMF components are composed across their epoch counts and
+   combined when both are present.
 4. Final PMFs are converted to `dp_accounting.PrivacyLossDistribution`.
 5. Epsilon/delta queries are answered on that PLD object.
 
@@ -39,6 +51,49 @@ Both input modes share this shape:
 - Gaussian mode: starts from analytic log-normal factors.
 - Realization mode: starts from user-provided `PLDRealization`.
 
+## Parameter Budget Conventions
+
+Shared composition budgets are derived inside
+`_allocation_PMF_core()` in `PLD_accounting/random_allocation_accounting.py`.
+
+- `output_tail_truncation = component_tail_truncation / 3`
+- `base_tail_truncation = output_tail_truncation / (2 * component_num_epochs)`
+- `output_loss_discretization = config.loss_discretization / 3`
+- `base_loss_discretization = output_loss_discretization / sqrt(component_num_epochs)`
+
+Interpretation used in code:
+
+- `allocation_PMF()` splits the direction-level tail budget by `1/2` before
+  passing it into floor/ceil component construction and optional floor/ceil
+  merge convolution.
+- `/3` is used in each component core because truncation is handled across
+  multiple stages (base creation, composition, output alignment).
+- `1 / (2 * num_epochs)` is used for base tail truncation in each component.
+- `1 / sqrt(num_epochs)` is used for core loss discretization because
+  discretization error scales approximately like the square root of the number
+  of compositions.
+- In shared geometric remove/add base builders, one-step factor creation gets
+  an additional `1 / num_steps` tail scaling to keep per-step discretization
+  budgets stable as inner step count grows.
+
+Gaussian FFT path needs additional one-step parameters for discretizing analytic
+continuous factors. These are derived in
+`_gaussian_allocation_fft()` in `PLD_accounting/random_allocation_gaussian.py`:
+
+- `single_step_tail_truncation = tail_truncation / num_steps`
+  with a numerical-stability floor (`eps * 1e-10`) chosen empirically as a
+  reasonable value (no strict derivation).
+- Per-factor FFT tail allocation:
+  REMOVE uses `single_step_tail_truncation / 2` (lower + upper factors),
+  ADD uses no extra split.
+
+Gaussian GEOM path now mirrors realization wiring after factor creation:
+- both routes call shared `geometric_allocation_PMF_base_add/remove(...)`;
+- only the base distribution creation differs (analytic Gaussian vs explicit realization).
+
+Realization path uses the same depth factor for component-level loss
+discretization before shared composition finalization.
+
 ## File Map
 
 | File | Responsibility |
@@ -46,8 +101,9 @@ Both input modes share this shape:
 | `PLD_accounting/__init__.py` | Public exports. |
 | `PLD_accounting/types.py` | Enums and configs (`PrivacyParams`, `AllocationSchemeConfig`, `BoundType`, etc.). |
 | `PLD_accounting/random_allocation_api.py` | Public entry points for Gaussian and realization accounting. |
-| `PLD_accounting/random_allocation_accounting.py` | Shared realization-based composition helpers and final composition logic. |
+| `PLD_accounting/random_allocation_accounting.py` | Shared composition/finalization helpers used by both Gaussian and realization paths. |
 | `PLD_accounting/random_allocation_gaussian.py` | Gaussian-specific factor construction and convolution method selection. |
+| `PLD_accounting/random_allocation_realization.py` | Realization-specific factor construction from `PLDRealization` inputs. |
 | `PLD_accounting/adaptive_random_allocation.py` | Adaptive upper/lower range refinement for epsilon/delta queries. |
 | `PLD_accounting/discrete_dist.py` | Distribution classes (`LinearDiscreteDist`, `GeometricDiscreteDist`, `PLDRealization`, etc.). |
 | `PLD_accounting/distribution_discretization.py` | Continuous-to-discrete conversion and spacing changes (linear/geometric). |
@@ -82,21 +138,39 @@ Notes:
 
 ### `random_allocation_accounting.py`
 
-This is the shared composition core for realization-based accounting and shared finalize helpers.
+This is the shared composition core used by both Gaussian and realization accounting.
 
 Key functions:
 
-- `decompose_allocation_compositions(...)`:
-  Converts `(num_steps, num_selected, num_epochs)` into
-  `(num_steps_per_round, num_rounds)`.
-- `allocation_PMF_from_realization(...)`:
-  Builds per-direction PMF from a `PLDRealization`.
-- `log_mean_exp_remove(...)` and `log_mean_exp_add(...)`:
-  Implement the exp-space convolution core used by Appendix C algorithms.
-- `finalize_allocation_composition(...)`:
-  Regrid, compose across `num_rounds`, and regrid to output discretization.
-- `compose_pld_from_pmfs(...)`:
+- `allocation_PLD(...)`:
+  Shared top-level orchestrator used by both API paths. Calls
+  `allocation_PMF(...)` for REMOVE and ADD, then combines with
+  `_compose_pld_from_pmfs(...)`.
+- `_allocation_PMF_core(...)`:
+  Calls a base-PMF callback, regrids to core resolution, composes across
+  epochs, then regrids to output discretization.
+- `geometric_allocation_PMF_base_remove(...)`:
+  Shared exp-space geometric composer for REMOVE. Accepts a callback that
+  builds lower/upper loss factors.
+- `geometric_allocation_PMF_base_add(...)`:
+  Shared exp-space geometric composer for ADD. Accepts a callback that builds
+  the add loss factor.
+- `allocation_PMF(...)`:
+  Applies adaptive step decomposition and composes floor/ceil components.
+- `_compose_pld_from_pmfs(...)`:
   Converts internal PMFs into a `dp_accounting` PLD object.
+
+### `random_allocation_realization.py`
+
+Realization-specific path that starts from explicit `PLDRealization` factors and
+then reuses shared composition logic.
+
+Key functions:
+
+- `realization_remove_base_distributions(...)`: prepares REMOVE realization
+  base/dual loss factors for shared geometric composition.
+- `realization_add_base_distribution(...)`: prepares ADD realization base
+  factor for shared geometric composition.
 
 ### `random_allocation_gaussian.py`
 
@@ -104,14 +178,17 @@ Gaussian-specific path that constructs factors analytically, then reuses shared 
 
 Key functions:
 
-- `compute_conv_params(...)`: derives grid sizes, truncation budgets, and
-  `(num_steps_per_round, num_rounds)`.
-- `allocation_PMF_from_gaussian(...)`: dispatches by direction and convolution method (`FFT`, `GEOM`, `BEST_OF_TWO`, `COMBINED`), then finalizes composition.
+- `gaussian_allocation_PMF_core(...)`: selects FFT/GEOM/BEST computation and
+  returns the base PMF used by `_allocation_PMF_core(...)`:
+  - FFT callback uses `_gaussian_allocation_fft(...)` with compact ADD/REMOVE internals.
+  - GEOM callback uses shared add/remove geometric cores with Gaussian factor
+    builders, matching realization route structure.
+  - BEST callback combines FFT and GEOM PMFs.
 - Internal builders:
-  - `_allocation_PMF_remove_fft(...)`
-  - `_allocation_PMF_remove_geom(...)`
-  - `_allocation_PMF_add_fft(...)`
-  - `_allocation_PMF_add_geom(...)`
+  - `_gaussian_allocation_fft_remove(...)`
+  - `_gaussian_remove_geom_loss_factors(...)`
+  - `_gaussian_allocation_fft_add(...)`
+  - `_gaussian_add_geom_loss_factor(...)`
 
 ## Adaptive Refinement
 

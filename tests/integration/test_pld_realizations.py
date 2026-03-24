@@ -414,7 +414,7 @@ class TestErrorHandling:
 
     def test_invalid_num_steps(self):
         realization = _simple_valid_realization()
-        with pytest.raises(ValueError, match="num_steps must be >= 1"):
+        with pytest.raises(ValueError, match=r"num_steps .* must be >= 1"):
             general_allocation_PLD(
                 num_steps=0,
                 num_selected=1,

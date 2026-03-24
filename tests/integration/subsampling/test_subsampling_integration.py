@@ -1,6 +1,7 @@
 """
 Integration tests for subsampling behavior.
 """
+from functools import partial
 import math
 import numpy as np
 import pytest
@@ -16,7 +17,8 @@ from PLD_accounting.types import (
     Direction,
     PrivacyParams,
 )
-from PLD_accounting.random_allocation_gaussian import allocation_PMF_from_gaussian, compute_conv_params
+from PLD_accounting.random_allocation_accounting import _allocation_PMF_core as allocation_PMF_core
+from PLD_accounting.random_allocation_gaussian import gaussian_allocation_PMF_core
 
 
 def _upper_to_lower(dist: GeneralDiscreteDist) -> GeneralDiscreteDist:
@@ -61,6 +63,29 @@ def _total_mass(pmf) -> float:
     return finite + dense._infinity_mass
 
 
+def _gaussian_single_component_pmf(*,
+    num_steps: int,
+    sigma: float,
+    config: AllocationSchemeConfig,
+    direction: Direction,
+    bound_type: BoundType,
+) -> LinearDiscreteDist:
+    return allocation_PMF_core(
+        num_steps=num_steps,
+        num_epochs=1,
+        compute_base_pmf=partial(
+            gaussian_allocation_PMF_core,
+            direction=direction,
+            sigma=sigma,
+            config=config,
+            bound_type=bound_type,
+        ),
+        loss_discretization=config.loss_discretization,
+        tail_truncation=config.tail_truncation,
+        bound_type=bound_type,
+    )
+
+
 
 class TestPLDDualRealisticScenarios:
     """Tests for PLD-dual on realistic random allocation scenarios."""
@@ -81,12 +106,13 @@ class TestPLDDualRealisticScenarios:
             convolution_method=ConvolutionMethod.GEOM
         )
 
-        conv_params = compute_conv_params(params=params, config=config)
-        remove_upper = allocation_PMF_from_gaussian(
-            conv_params=conv_params,
+        new_num_steps = params.num_steps // params.num_selected
+        remove_upper = _gaussian_single_component_pmf(
+            num_steps=new_num_steps,
+            sigma=params.sigma,
+            config=config,
             direction=Direction.REMOVE,
             bound_type=BoundType.DOMINATES,
-            convolution_method=config.convolution_method
         )
 
         subsampled = subsample_PMF(
@@ -115,12 +141,13 @@ class TestPLDDualRealisticScenarios:
             convolution_method=ConvolutionMethod.GEOM
         )
 
-        conv_params = compute_conv_params(params=params, config=config)
-        add_upper = allocation_PMF_from_gaussian(
-            conv_params=conv_params,
+        new_num_steps = params.num_steps // params.num_selected
+        add_upper = _gaussian_single_component_pmf(
+            num_steps=new_num_steps,
+            sigma=params.sigma,
+            config=config,
             direction=Direction.ADD,
             bound_type=BoundType.DOMINATES,
-            convolution_method=config.convolution_method
         )
 
         subsampled = subsample_PMF(
@@ -150,14 +177,14 @@ class TestPLDDualRealisticScenarios:
             convolution_method=ConvolutionMethod.GEOM
         )
 
-        conv_params = compute_conv_params(params=params, config=config)
-
+        new_num_steps = params.num_steps // params.num_selected
         for direction in [Direction.REMOVE, Direction.ADD]:
-            upper = allocation_PMF_from_gaussian(
-                conv_params=conv_params,
+            upper = _gaussian_single_component_pmf(
+                num_steps=new_num_steps,
+                sigma=params.sigma,
+                config=config,
                 direction=direction,
                 bound_type=BoundType.DOMINATES,
-                convolution_method=config.convolution_method
             )
 
             subsampled = subsample_PMF(

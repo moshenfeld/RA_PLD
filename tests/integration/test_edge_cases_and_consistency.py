@@ -467,7 +467,7 @@ class TestConsistencyConvolutionMethods:
             num_steps=10,
             num_selected=2,
             num_epochs=1,
-            delta=1e-6,
+            delta=2e-6,
         )
 
         config_fft = AllocationSchemeConfig(

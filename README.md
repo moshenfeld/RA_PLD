@@ -23,8 +23,12 @@ The package accounts for the following sampling pattern:
 
 Internal composition:
 
-- `num_steps_per_round = floor(num_steps / num_selected)`
-- `num_rounds = num_selected * num_epochs`
+- `floor_steps = floor(num_steps / num_selected)`
+- `remainder = num_steps - num_selected * floor_steps`
+- `floor_epochs = (num_selected - remainder) * num_epochs`
+- `ceil_steps = floor_steps + 1`
+- `ceil_epochs = remainder * num_epochs`
+- We compute 1-out-of-`floor_steps` then self compose it `floor_epochs` times, compute 1-out-of-`ceil_steps` then self compose it `ceil_epochs` times, and finally compose them with each other
 
 ## API Overview
 

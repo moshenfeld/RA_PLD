@@ -430,12 +430,8 @@ class TestCompositionStructuralInvariants:
     """Test structural invariants of composition operations."""
     pytestmark = [pytest.mark.nightly, pytest.mark.slow]
 
-    def test_composition_count_floor_invariant(self):
-        """Property: floor(num_steps / num_selected) determines inner composition count.
-
-        Values of num_steps with the same floor(num_steps / num_selected)
-        should produce identical results.
-        """
+    def test_composition_count_remainder_affects_result(self):
+        """Property: non-divisible remainder contributes to composition outcome."""
         realization = PLDRealization(
             x_min=0.0,
             x_gap=0.05,
@@ -450,7 +446,7 @@ class TestCompositionStructuralInvariants:
         num_selected = 4
         epsilon_query = 0.2
 
-        # Test pairs with same floor division
+        # Test pairs with the same floor division but different remainders.
         test_pairs = [
             (4, 5),   # floor(4/4)=1, floor(5/4)=1
             (8, 9),   # floor(8/4)=2, floor(9/4)=2
@@ -479,13 +475,12 @@ class TestCompositionStructuralInvariants:
             delta_a = float(pld_a.get_delta_for_epsilon(epsilon_query))
             delta_b = float(pld_b.get_delta_for_epsilon(epsilon_query))
 
-            # Should be identical (within numerical precision)
-            assert abs(delta_a - delta_b) < 1e-12, (
-                f"Floor invariant violated:\n"
+            assert abs(delta_a - delta_b) > 1e-6, (
+                f"Expected remainder-sensitive difference:\n"
                 f"  num_steps={num_steps_a}: delta={delta_a}\n"
                 f"  num_steps={num_steps_b}: delta={delta_b}\n"
                 f"  Both have floor(n/{num_selected})={num_steps_a // num_selected}, "
-                f"should be identical"
+                f"but different remainders should change composition"
             )
 
     def test_epoch_multiplier_invariant(self):
