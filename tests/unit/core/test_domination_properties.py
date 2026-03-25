@@ -7,22 +7,20 @@ import math
 import pytest
 import numpy as np
 from scipy import stats
+from PLD_accounting.FFT_convolution import FFT_self_convolve, FFT_convolve
+from PLD_accounting.geometric_convolution import geometric_self_convolve, geometric_convolve
 from PLD_accounting.types import BoundType, SpacingType, ConvolutionMethod, Direction
-from PLD_accounting.discrete_dist import DiscreteDist
-from PLD_accounting.convolution_API import (
-    convolve_discrete_distributions
-)
+from PLD_accounting.discrete_dist import GeneralDiscreteDist, GeometricDiscreteDist, LinearDiscreteDist
 from PLD_accounting.distribution_discretization import (
     discretize_continuous_distribution
 )
-from PLD_accounting.geometric_convolution import geometric_convolve
-from PLD_accounting.core_utils import compute_bin_width
+from PLD_accounting.distribution_utils import compute_bin_width
 from PLD_accounting.subsample_PLD import (
     _mix_distributions,
+    _calc_subsampled_grid,
     _stable_subsampling_transformation,
     _subsample_dist,
     _subsample_dist_mix,
-    calc_subsampled_grid,
 )
 from tests.test_tolerances import TestTolerances as TOL
 
@@ -167,14 +165,14 @@ class TestDominationUnderConvolution:
     def test_convolution_preserves_domination_constraint(self):
         """Test that convolution preserves infinity mass constraints."""
         # Use geometric grids with same ratio for geometric kernel
-        x1 = np.array([1.0, 2.0, 4.0])
+        x1 = np.geomspace(1.0, 4.0, 3)
         pmf1 = np.array([0.3, 0.5, 0.2], dtype=np.float64)
         # DOMINATES: p_neg_inf = 0
-        dist1 = DiscreteDist(x_array=x1, PMF_array=pmf1, p_neg_inf=0.0, p_pos_inf=0.0)
+        dist1 = GeometricDiscreteDist.from_x_array(x_array=x1, PMF_array=pmf1, p_neg_inf=0.0, p_pos_inf=0.0)
 
-        x2 = np.array([0.5, 1.0])
+        x2 = np.geomspace(0.5, 1.0, 2)
         pmf2 = np.array([0.6, 0.4], dtype=np.float64)
-        dist2 = DiscreteDist(x_array=x2, PMF_array=pmf2, p_neg_inf=0.0, p_pos_inf=0.0)
+        dist2 = GeometricDiscreteDist.from_x_array(x_array=x2, PMF_array=pmf2, p_neg_inf=0.0, p_pos_inf=0.0)
 
         result = geometric_convolve(
             dist_1=dist1,
@@ -197,7 +195,7 @@ class TestDominationUnderConvolution:
         x1 = np.geomspace(1.0, 8.0, 3)
         pmf1 = np.array([0.2, 0.5, 0.2], dtype=np.float64)
         # Invalid: DOMINATES with p_neg_inf > 0
-        dist1 = DiscreteDist(x_array=x1, PMF_array=pmf1, p_neg_inf=0.1, p_pos_inf=0.0)
+        dist1 = GeneralDiscreteDist(x_array=x1, PMF_array=pmf1, p_neg_inf=0.1, p_pos_inf=0.0)
 
         # Validation should catch the error
         with pytest.raises(ValueError, match="DOMINATES.*p_neg_inf"):
@@ -210,9 +208,9 @@ class TestRoundingBehavior:
     def test_dominates_rounds_up(self):
         """Test that DOMINATES mode rounds values up to next grid point."""
         # Create distribution with geometric grid for geometric kernel
-        x_in = np.array([1.0, 2.0, 4.0])
+        x_in = np.geomspace(1.0, 4.0, 3)
         pmf_in = np.array([0.3, 0.4, 0.3], dtype=np.float64)
-        dist_in = DiscreteDist(x_array=x_in, PMF_array=pmf_in)
+        dist_in = GeometricDiscreteDist.from_x_array(x_array=x_in, PMF_array=pmf_in)
 
         # Convolve with itself - will create intermediate values
         result = geometric_convolve(
@@ -229,9 +227,9 @@ class TestRoundingBehavior:
     def test_is_dominated_rounds_down(self):
         """Test that IS_DOMINATED mode rounds values down to previous grid point."""
         # Create distribution with geometric grid for geometric kernel
-        x_in = np.array([1.0, 2.0, 4.0])
+        x_in = np.geomspace(1.0, 4.0, 3)
         pmf_in = np.array([0.3, 0.4, 0.3], dtype=np.float64)
-        dist_in = DiscreteDist(x_array=x_in, PMF_array=pmf_in, p_pos_inf=0.0)
+        dist_in = GeometricDiscreteDist.from_x_array(x_array=x_in, PMF_array=pmf_in, p_pos_inf=0.0)
 
         result = geometric_convolve(
             dist_1=dist_in,
@@ -277,13 +275,13 @@ class TestExponentialDistribution:
         assert result.p_pos_inf == 0.0
 
 
-def _build_test_dist(x_array, pmf_array, *, p_neg_inf=0.0, p_pos_inf=0.0) -> DiscreteDist:
+def _build_test_dist(x_array, pmf_array, *, p_neg_inf=0.0, p_pos_inf=0.0) -> GeneralDiscreteDist:
     finite_mass = 1.0 - p_neg_inf - p_pos_inf
     if finite_mass <= 0.0:
         raise ValueError("Infinite masses must leave positive finite mass")
     pmf = np.array(pmf_array, dtype=np.float64)
     pmf = pmf / pmf.sum() * finite_mass
-    return DiscreteDist(
+    return GeneralDiscreteDist(
         x_array=np.array(x_array, dtype=np.float64),
         PMF_array=pmf,
         p_neg_inf=p_neg_inf,
@@ -298,21 +296,19 @@ class TestSubsampleDistMix:
     _REF_PMF = np.array([0.15, 0.2, 0.25, 0.2, 0.1, 0.1], dtype=np.float64)
 
     @pytest.mark.parametrize(
-        "bound_type, base_inf, ref_inf",
+        "base_inf, ref_inf",
         [
             (
-                BoundType.DOMINATES,
                 {"p_neg_inf": 0.0, "p_pos_inf": 0.05},
                 {"p_neg_inf": 0.0, "p_pos_inf": 0.03},
             ),
             (
-                BoundType.IS_DOMINATED,
                 {"p_neg_inf": 0.04, "p_pos_inf": 0.0},
                 {"p_neg_inf": 0.02, "p_pos_inf": 0.0},
             ),
         ],
     )
-    def test_matches_sequential_discretization(self, bound_type, base_inf, ref_inf):
+    def test_matches_sequential_discretization(self, base_inf, ref_inf):
         sampling_prob = 0.37
         direction = Direction.REMOVE
         base_dist = _build_test_dist(self._BASE_X, self._BASE_PMF, **base_inf)
@@ -320,31 +316,27 @@ class TestSubsampleDistMix:
 
         result = _subsample_dist_mix(
             base_pld=base_dist,
-            ref_pld=ref_dist,
+            neg_dual_pld=ref_dist,
             sampling_prob=sampling_prob,
             direction=direction,
-            bound_type=bound_type,
         )
 
         base_subsampled = _subsample_dist(
             base_pld=base_dist,
             sampling_prob=sampling_prob,
             direction=direction,
-            bound_type=bound_type,
             target_x_array=result.x_array,
         )
         ref_subsampled = _subsample_dist(
             base_pld=ref_dist,
             sampling_prob=sampling_prob,
             direction=direction,
-            bound_type=bound_type,
             target_x_array=result.x_array,
         )
         coupled = _mix_distributions(
             dist_1=base_subsampled,
             dist_2=ref_subsampled,
             weight_first=sampling_prob,
-            bound_type=bound_type,
         )
 
         np.testing.assert_allclose(result.x_array, coupled.x_array, rtol=1e-12, atol=0.0)
@@ -360,10 +352,9 @@ class TestSubsampleDistMix:
 
         result = _subsample_dist_mix(
             base_pld=base_dist,
-            ref_pld=ref_dist,
+            neg_dual_pld=ref_dist,
             sampling_prob=sampling_prob,
             direction=direction,
-            bound_type=BoundType.DOMINATES,
         )
 
         base_endpoints = _stable_subsampling_transformation(
@@ -395,7 +386,7 @@ class TestSubsampleDistMix:
         direction = Direction.REMOVE
         base_dist = _build_test_dist(self._BASE_X, self._BASE_PMF, p_neg_inf=0.0, p_pos_inf=0.0)
         ref_dist = _build_test_dist(self._REF_X, self._REF_PMF, p_neg_inf=0.0, p_pos_inf=0.0)
-        target_grid = calc_subsampled_grid(
+        target_grid = _calc_subsampled_grid(
             lower_loss=base_dist.x_array[0],
             discretization=compute_bin_width(base_dist.x_array),
             num_buckets=int(base_dist.x_array.size),
@@ -405,10 +396,9 @@ class TestSubsampleDistMix:
 
         result = _subsample_dist_mix(
             base_pld=base_dist,
-            ref_pld=ref_dist,
+            neg_dual_pld=ref_dist,
             sampling_prob=sampling_prob,
             direction=direction,
-            bound_type=BoundType.DOMINATES,
             target_x_array=target_grid,
         )
 
